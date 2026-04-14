@@ -2,22 +2,18 @@ const WebSocket = require('ws');
 
 let wss = null;
 
-function setupWebSocket(server, db) {
+function setupWebSocket(server, store) {
   wss = new WebSocket.Server({ server });
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', (ws) => {
     console.log('[WS] Client connected');
 
-    // Send initial state
     try {
-      const agents = db.prepare('SELECT * FROM agents').all();
-      const vault = getVaultData(db);
-      const trades = db.prepare(
-        'SELECT t.*, a.codename as agent_codename FROM trades t JOIN agents a ON t.agent_id = a.id ORDER BY t.opened_at DESC LIMIT 50'
-      ).all();
-      const connections = db.prepare('SELECT * FROM connections').all().map(c => ({
-        ...c,
-        config: JSON.parse(c.config || '{}')
+      const agents = store.getAgents();
+      const vault = getVaultData(store);
+      const trades = store.getTrades({ limit: 50 });
+      const connections = store.getConnections().map(c => ({
+        ...c, config: JSON.parse(c.config || '{}')
       }));
 
       ws.send(JSON.stringify({
@@ -30,25 +26,18 @@ function setupWebSocket(server, db) {
         }
       }));
     } catch (err) {
-      console.error('[WS] Error sending init data:', err.message);
+      console.error('[WS] Init error:', err.message);
     }
 
     ws.on('message', (message) => {
       try {
         const msg = JSON.parse(message.toString());
-        handleClientMessage(ws, db, msg);
-      } catch (e) {
-        // ignore
-      }
+        if (msg.type === 'PING') ws.send(JSON.stringify({ type: 'PONG' }));
+      } catch { /* ignore */ }
     });
 
-    ws.on('close', () => {
-      console.log('[WS] Client disconnected');
-    });
-
-    ws.on('error', (err) => {
-      console.error('[WS] Client error:', err.message);
-    });
+    ws.on('close', () => console.log('[WS] Client disconnected'));
+    ws.on('error', (err) => { console.error('[WS] Error:', err.message); ws.close(); });
   });
 
   return wss;
@@ -56,22 +45,20 @@ function setupWebSocket(server, db) {
 
 function broadcast(type, data) {
   if (!wss) return;
-  const message = JSON.stringify({ type, data });
+  const msg = JSON.stringify({ type, data });
   wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
   });
 }
 
-function getVaultData(db) {
-  const agents = db.prepare('SELECT * FROM agents').all();
-  const totalBalance = agents.reduce((sum, a) => sum + a.current_balance, 0);
-  const totalAllocated = agents.reduce((sum, a) => sum + a.allocated_funds, 0);
-  const dailyPnl = agents.reduce((sum, a) => sum + a.daily_pnl, 0);
-  const weeklyPnl = agents.reduce((sum, a) => sum + a.weekly_pnl, 0);
-  const totalPnl = agents.reduce((sum, a) => sum + a.total_pnl, 0);
-  const activeAgents = agents.filter(a => a.status === 'active').length;
+function getVaultData(store) {
+  const agents = store.getAgents();
+  const totalBalance = agents.reduce((s, a) => s + a.current_balance, 0);
+  const totalAllocated = agents.reduce((s, a) => s + a.allocated_funds, 0);
+  const dailyPnl = agents.reduce((s, a) => s + a.daily_pnl, 0);
+  const weeklyPnl = agents.reduce((s, a) => s + a.weekly_pnl, 0);
+  const totalPnl = agents.reduce((s, a) => s + a.total_pnl, 0);
+  const activeAgents = agents.filter(a => a.status === 'active' || a.status === 'executing').length;
 
   return {
     totalBalance,
@@ -81,7 +68,7 @@ function getVaultData(db) {
     totalPnl,
     activeAgents,
     totalAgents: agents.length,
-    roi: totalAllocated > 0 ? ((totalPnl / totalAllocated) * 100) : 0
+    roi: totalAllocated > 0 ? (totalPnl / totalAllocated) * 100 : 0
   };
 }
 
@@ -115,7 +102,8 @@ function formatTrade(trade) {
   return {
     id: trade.id,
     agentId: trade.agent_id,
-    agentCodename: trade.agent_codename,
+    agentCodename: trade.agent_codename || '',
+    agentColor: trade.agent_color || '',
     symbol: trade.symbol,
     direction: trade.direction,
     entryPrice: trade.entry_price,
@@ -127,13 +115,6 @@ function formatTrade(trade) {
     openedAt: trade.opened_at,
     closedAt: trade.closed_at
   };
-}
-
-function handleClientMessage(ws, db, msg) {
-  // Handle ping
-  if (msg.type === 'PING') {
-    ws.send(JSON.stringify({ type: 'PONG' }));
-  }
 }
 
 module.exports = { setupWebSocket, broadcast, getVaultData, formatAgent, formatTrade };

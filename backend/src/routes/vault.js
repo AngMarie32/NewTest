@@ -2,29 +2,23 @@ const express = require('express');
 const router = express.Router();
 const { getVaultData } = require('../websocket');
 
-// GET vault totals
 router.get('/', (req, res) => {
-  res.json(getVaultData(req.db));
+  res.json(getVaultData(req.store));
 });
 
-// GET vault history (snapshots)
 router.get('/history', (req, res) => {
   const hours = parseInt(req.query.hours) || 24;
-  const snapshots = req.db.prepare(`
-    SELECT * FROM vault_snapshots
-    WHERE recorded_at > datetime('now', '-${hours} hours')
-    ORDER BY recorded_at ASC
-  `).all();
-  res.json(snapshots);
+  res.json(req.store.getSnapshots(hours));
 });
 
-// POST take a vault snapshot
 router.post('/snapshot', (req, res) => {
-  const vault = getVaultData(req.db);
-  req.db.prepare(`
-    INSERT INTO vault_snapshots (total_balance, daily_pnl, weekly_pnl, total_pnl)
-    VALUES (?, ?, ?, ?)
-  `).run(vault.totalBalance, vault.dailyPnl, vault.weeklyPnl, vault.totalPnl);
+  const vault = getVaultData(req.store);
+  req.store.insertSnapshot({
+    total_balance: vault.totalBalance,
+    daily_pnl: vault.dailyPnl,
+    weekly_pnl: vault.weeklyPnl,
+    total_pnl: vault.totalPnl
+  });
   res.json({ success: true, snapshot: vault });
 });
 

@@ -1,175 +1,82 @@
-/**
- * NinjaTrader 8 Integration Service
- *
- * NinjaTrader 8 exposes a REST API when the HTTP server is enabled.
- * To enable: Tools > Options > NinjaScript > Enable HTTP Server
- * Default URL: http://localhost:8080
- *
- * NT8 REST API Endpoints:
- *   GET /NinjaTrader/accounts - List all accounts
- *   GET /NinjaTrader/account/{id}/positions - Open positions
- *   GET /NinjaTrader/account/{id}/orders - Order history
- *   GET /NinjaTrader/account/{id}/executions - Trade executions
- *   GET /NinjaTrader/account/{id}/performance - Performance stats
- */
-
 const axios = require('axios');
-const { broadcast, getVaultData, formatAgent, formatTrade } = require('../websocket');
+const { broadcast, getVaultData, formatAgent } = require('../websocket');
 
 let pollingInterval = null;
-let db = null;
+let store = null;
 
-const NT_BASE_URL = 'http://localhost:8080';
-const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
-
-async function startPolling(database, wss) {
-  db = database;
-
-  // Check if NT8 is connected on startup
+async function startPolling(database) {
+  store = database;
   await checkConnection();
-
-  // Poll every 5 minutes
-  pollingInterval = setInterval(async () => {
-    await syncAllNTAgents();
-  }, POLL_INTERVAL);
+  pollingInterval = setInterval(syncAllNTAgents, 5 * 60 * 1000);
 }
 
 async function checkConnection() {
-  const conn = db.prepare("SELECT * FROM connections WHERE platform = 'ninjatrader'").get();
+  const conn = store.getConnection('ninjatrader');
   if (!conn) return false;
-
-  const config = JSON.parse(conn.config || '{}');
-  const host = config.host || 'localhost';
-  const port = config.port || 8080;
+  const cfg = JSON.parse(conn.config || '{}');
+  const host = cfg.host || 'localhost';
+  const port = cfg.port || 8080;
 
   try {
-    const response = await axios.get(`http://${host}:${port}/NinjaTrader/accounts`, {
+    await axios.get(`http://${host}:${port}/NinjaTrader/accounts`, {
       timeout: 3000,
-      auth: config.username ? {
-        username: config.username,
-        password: config.password || ''
-      } : undefined
+      ...(cfg.username ? { auth: { username: cfg.username, password: cfg.password || '' } } : {})
     });
-
-    db.prepare("UPDATE connections SET status = 'connected', last_sync = CURRENT_TIMESTAMP WHERE platform = 'ninjatrader'").run();
-    broadcast('CONNECTION_STATUS', {
-      platform: 'ninjatrader',
-      status: 'connected',
-      accounts: response.data
-    });
-    console.log('[NinjaTrader] Connected successfully');
+    store.upsertConnection('ninjatrader', { status: 'connected', last_sync: new Date().toISOString() });
+    broadcast('CONNECTION_STATUS', { platform: 'ninjatrader', status: 'connected' });
+    console.log('[NinjaTrader] Connected');
     return true;
-  } catch (err) {
-    db.prepare("UPDATE connections SET status = 'disconnected' WHERE platform = 'ninjatrader'").run();
-    // Silently fail - NT8 may not be running
+  } catch {
+    store.upsertConnection('ninjatrader', { status: 'disconnected' });
     return false;
   }
 }
 
 async function syncAllNTAgents() {
-  const conn = db.prepare("SELECT * FROM connections WHERE platform = 'ninjatrader'").get();
+  const conn = store.getConnection('ninjatrader');
   if (!conn || conn.status !== 'connected') return;
 
-  const config = JSON.parse(conn.config || '{}');
-  const ntAgents = db.prepare("SELECT * FROM agents WHERE platform = 'ninjatrader'").all();
+  const cfg = JSON.parse(conn.config || '{}');
+  const ntAgents = store.getAgents().filter(a => a.platform === 'ninjatrader' && a.account_id);
 
   for (const agent of ntAgents) {
-    if (agent.account_id) {
-      await syncAgentAccount(agent, config);
-    }
+    await syncAgent(agent, cfg);
   }
 }
 
-async function syncAgentAccount(agent, config) {
-  const host = config.host || 'localhost';
-  const port = config.port || 8080;
-  const baseUrl = `http://${host}:${port}/NinjaTrader`;
+async function syncAgent(agent, cfg) {
+  const base = `http://${cfg.host || 'localhost'}:${cfg.port || 8080}/NinjaTrader`;
+  const auth = cfg.username ? { auth: { username: cfg.username, password: cfg.password } } : {};
 
   try {
-    // Get account performance
-    const perfResponse = await axios.get(`${baseUrl}/account/${agent.account_id}/performance`, {
-      timeout: 5000,
-      auth: config.username ? { username: config.username, password: config.password } : undefined
+    const [perfRes, posRes] = await Promise.all([
+      axios.get(`${base}/account/${agent.account_id}/performance`, { timeout: 5000, ...auth }),
+      axios.get(`${base}/account/${agent.account_id}/positions`,   { timeout: 5000, ...auth })
+    ]);
+
+    const perf = perfRes.data;
+    const openPositions = (posRes.data || []).length;
+
+    store.updateAgent(agent.id, {
+      current_balance: perf.accountValue   || agent.current_balance,
+      daily_pnl:       perf.todayPnl       || 0,
+      total_pnl:       perf.totalNetProfit || 0,
+      total_trades:    perf.totalTrades    || agent.total_trades,
+      open_positions:  openPositions,
+      status:          openPositions > 0 ? 'executing' : 'active'
     });
 
-    const perf = perfResponse.data;
-
-    // Get open positions
-    const posResponse = await axios.get(`${baseUrl}/account/${agent.account_id}/positions`, {
-      timeout: 5000,
-      auth: config.username ? { username: config.username, password: config.password } : undefined
-    });
-
-    const positions = posResponse.data || [];
-    const openPositions = positions.length;
-
-    // Get recent executions (last 50)
-    const execResponse = await axios.get(`${baseUrl}/account/${agent.account_id}/executions`, {
-      timeout: 5000,
-      auth: config.username ? { username: config.username, password: config.password } : undefined
-    });
-
-    const executions = execResponse.data || [];
-
-    // Update agent with live data
-    db.prepare(`
-      UPDATE agents SET
-        current_balance = ?,
-        daily_pnl = ?,
-        total_pnl = ?,
-        total_trades = ?,
-        open_positions = ?,
-        status = ?
-      WHERE id = ?
-    `).run(
-      perf.accountValue || agent.current_balance,
-      perf.todayPnl || 0,
-      perf.totalNetProfit || 0,
-      perf.totalTrades || agent.total_trades,
-      openPositions,
-      openPositions > 0 ? 'executing' : 'active',
-      agent.id
-    );
-
-    // Import any new executions as trades
-    for (const exec of executions.slice(-10)) {
-      const exists = db.prepare('SELECT id FROM trades WHERE id = ?').get(`nt_${exec.orderId}`);
-      if (!exists) {
-        db.prepare(`
-          INSERT OR IGNORE INTO trades
-            (agent_id, symbol, direction, entry_price, exit_price, pnl, status, platform, opened_at, closed_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'closed', 'ninjatrader', ?, ?)
-        `).run(
-          agent.id,
-          exec.instrument || '',
-          exec.action === 'Buy' ? 'long' : 'short',
-          exec.avgFillPrice || 0,
-          exec.avgFillPrice || 0,
-          exec.realizedPnl || 0,
-          exec.time || new Date().toISOString(),
-          exec.time || new Date().toISOString()
-        );
-      }
-    }
-
-    const updatedAgent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agent.id);
-    broadcast('AGENT_UPDATE', { agent: formatAgent(updatedAgent) });
-    broadcast('VAULT_UPDATE', { vault: getVaultData(db) });
-
-  } catch (err) {
-    // Connection lost
-    db.prepare("UPDATE connections SET status = 'disconnected' WHERE platform = 'ninjatrader'").run();
+    broadcast('AGENT_UPDATE', { agent: formatAgent(store.getAgent(agent.id)) });
+    broadcast('VAULT_UPDATE', { vault: getVaultData(store) });
+  } catch {
+    store.upsertConnection('ninjatrader', { status: 'disconnected' });
     broadcast('CONNECTION_STATUS', { platform: 'ninjatrader', status: 'disconnected' });
   }
 }
 
-async function connectNinjaTrader(config) {
-  if (db) {
-    db.prepare(`
-      UPDATE connections SET config = ?, status = 'connecting' WHERE platform = 'ninjatrader'
-    `).run(JSON.stringify(config));
-  }
+async function connectNinjaTrader(config, database) {
+  if (database) store = database;
   return await checkConnection();
 }
 
-module.exports = { startPolling, connectNinjaTrader, syncAllNTAgents };
+module.exports = { startPolling, connectNinjaTrader };
