@@ -1,181 +1,170 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Agent } from '../types';
-import MiniChart from './MiniChart';
 
-interface AgentCardProps {
+interface Props {
   agent: Agent;
-  onSettings: (agentId: number) => void;
+  onSettings: (id: number) => void;
   isFlashing?: boolean;
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
+const fmt = (n: number) =>
+  (n >= 0 ? '+$' : '-$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function fmtPct(n: number) {
-  return (n * 100).toFixed(1) + '%';
-}
+const fmtBal = (n: number) =>
+  '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const MARKET_LABELS: Record<string, string> = {
-  forex: 'FX',
-  stocks: 'EQ',
-  crypto: 'CRYPTO',
-  futures: 'FUT'
+const STRATEGIES: Record<string, string> = {
+  forex:   'Momentum Scalper',
+  stocks:  'Mean Reversion',
+  crypto:  'Breakout Hunter',
+  futures: 'Trend Follower',
 };
 
-const AgentCard: React.FC<AgentCardProps> = ({ agent, onSettings, isFlashing }) => {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [justFlashed, setJustFlashed] = useState(false);
+/** Pixel-art spy character as inline SVG */
+const SpyFigure: React.FC<{ color: string }> = ({ color }) => (
+  <svg
+    width="22" height="34"
+    viewBox="0 0 11 17"
+    style={{ imageRendering: 'pixelated', overflow: 'visible' }}
+  >
+    {/* hat brim */}
+    <rect x="1" y="1" width="9" height="1" fill="#1a1a2e" />
+    {/* hat top */}
+    <rect x="2" y="0" width="7" height="2" fill="#1a1a2e" />
+    {/* head */}
+    <rect x="3" y="2" width="5" height="4" fill={color} />
+    {/* eyes */}
+    <rect x="4" y="3" width="1" height="1" fill="#000" />
+    <rect x="6" y="3" width="1" height="1" fill="#000" />
+    {/* body */}
+    <rect x="2" y="6" width="7" height="5" fill="#1a2a4a" />
+    {/* tie */}
+    <rect x="4" y="6" width="3" height="4" fill="#ffd700" />
+    {/* left arm */}
+    <rect x="0" y="6" width="2" height="4" fill="#1a2a4a" />
+    {/* right arm */}
+    <rect x="9" y="6" width="2" height="4" fill="#1a2a4a" />
+    {/* left leg */}
+    <rect x="2" y="11" width="3" height="5" fill="#111" />
+    {/* right leg */}
+    <rect x="6" y="11" width="3" height="5" fill="#111" />
+    {/* left shoe */}
+    <rect x="1" y="15" width="4" height="2" fill="#333" />
+    {/* right shoe */}
+    <rect x="6" y="15" width="4" height="2" fill="#333" />
+  </svg>
+);
+
+/** Bar chart heights that subtly animate */
+const BAR_HEIGHTS = [45, 70, 35, 80, 55, 65];
+
+const AgentCard: React.FC<Props> = ({ agent, onSettings, isFlashing }) => {
+  const [flashing, setFlashing] = useState(false);
+  const prevFlash = useRef(false);
 
   useEffect(() => {
-    if (isFlashing) {
-      setJustFlashed(true);
-      const t = setTimeout(() => setJustFlashed(false), 700);
-      return () => clearTimeout(t);
+    if (isFlashing && !prevFlash.current) {
+      setFlashing(true);
+      setTimeout(() => setFlashing(false), 750);
     }
+    prevFlash.current = isFlashing ?? false;
   }, [isFlashing]);
 
-  const pnlColor = agent.dailyPnl >= 0 ? 'positive' : 'negative';
-  const totalPnlColor = agent.totalPnl >= 0 ? 'positive' : 'negative';
-  const pnlSign = agent.dailyPnl >= 0 ? '+' : '';
-  const totalSign = agent.totalPnl >= 0 ? '+' : '';
+  const pnlPos  = agent.dailyPnl  >= 0;
+  const totalPos = agent.totalPnl >= 0;
 
   return (
-    <div
-      ref={cardRef}
-      className={`agent-card status-${agent.status} ${justFlashed ? 'trade-flash' : ''}`}
-      style={{ '--agent-color': agent.agentColor } as React.CSSProperties}
-    >
-      {/* Corner decorations */}
-      <div className="agent-card-corner tl" style={{ borderColor: agent.agentColor + '80' }} />
-      <div className="agent-card-corner tr" style={{ borderColor: agent.agentColor + '80' }} />
-      <div className="agent-card-corner bl" style={{ borderColor: agent.agentColor + '80' }} />
-      <div className="agent-card-corner br" style={{ borderColor: agent.agentColor + '80' }} />
-
-      {/* Executing scan line */}
-      {agent.status === 'executing' && <div className="executing-line" />}
-
+    <div className={`agent-card${agent.status === 'executing' ? ' executing' : ''}${flashing ? ' flash' : ''}`}>
       {/* Header */}
-      <div className="agent-card-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span
-            className="agent-codename"
-            style={{ color: agent.agentColor, textShadow: `0 0 8px ${agent.agentColor}80` }}
-          >
-            {agent.codename}
-          </span>
-          <span
-            style={{
-              fontSize: 9,
-              color: 'var(--text-muted)',
-              letterSpacing: 1,
-              paddingLeft: 6,
-              borderLeft: `1px solid var(--border-dim)`
-            }}
-          >
-            {MARKET_LABELS[agent.preferredMarket] || agent.preferredMarket}
+      <div className="card-hdr">
+        <div className="card-agent-name">
+          <span className={`status-dot ${agent.status}`} />
+          <span style={{ color: agent.agentColor, textShadow: `0 0 6px ${agent.agentColor}60` }}>
+            AGENT {agent.codename}
           </span>
         </div>
-        <span className={`agent-status-badge ${agent.status}`}>
-          {agent.status === 'executing' ? '⬤ EXEC' :
-           agent.status === 'active' ? '⬤ ACTIVE' :
-           agent.status === 'standby' ? '◯ STANDBY' : '✕ OFFLINE'}
+        <span className={`card-status-badge ${agent.status}`}>
+          {agent.status === 'executing' ? 'EXEC' :
+           agent.status === 'active'    ? 'ACTIVE' :
+           agent.status === 'standby'   ? 'IDLE' : 'OFFLINE'}
         </span>
       </div>
 
-      {/* Body */}
-      <div className="agent-card-body">
-        {/* Metrics */}
-        <div className="agent-metrics-row">
-          <div className="agent-metric">
-            <span className="agent-metric-label">DAY P&L</span>
-            <span className={`agent-metric-value ${pnlColor}`}>
-              {pnlSign}${fmt(agent.dailyPnl)}
-            </span>
-          </div>
-          <div className="agent-metric">
-            <span className="agent-metric-label">WIN RATE</span>
-            <span className="agent-metric-value gold">
-              {fmtPct(agent.winRate)}
-            </span>
-          </div>
-          <div className="agent-metric">
-            <span className="agent-metric-label">TRADES</span>
-            <span className="agent-metric-value neutral">
-              {agent.todayTrades}<span style={{ color: 'var(--text-muted)', fontSize: 10 }}>/{agent.totalTrades}</span>
-            </span>
-          </div>
+      {/* Room */}
+      <div className="room">
+        {/* Chart screen */}
+        <div className="room-screen">
+          <span className="screen-label">CHARTS</span>
+          {BAR_HEIGHTS.map((h, i) => (
+            <div
+              key={i}
+              className="screen-bar"
+              style={{
+                height: `${Math.max(15, h + (agent.dailyPnl > 0 ? 10 : -5))}%`,
+                opacity: agent.status === 'offline' ? 0.2 : 1
+              }}
+            />
+          ))}
         </div>
 
-        {/* Chart */}
-        <MiniChart
-          data={agent.chartData}
-          color={agent.agentColor}
-          height={52}
-        />
+        {/* Animated spy character */}
+        <div
+          className="spy-agent"
+          style={{
+            color: agent.agentColor,
+            animationPlayState: agent.status === 'offline' ? 'paused' : 'running',
+            animationDuration: agent.status === 'executing' ? '3s' : '7s'
+          }}
+        >
+          <SpyFigure color={agent.agentColor} />
+        </div>
 
-        {/* Symbol row */}
-        <div className="agent-symbol-row" style={{ marginTop: 6 }}>
-          <div className="agent-current-symbol">
-            {agent.currentSymbol ? (
-              <>
-                <span style={{ color: 'var(--text-muted)' }}>MONITORING</span>
-                <span style={{ color: 'var(--text-white)', letterSpacing: 1 }}>
-                  {agent.currentSymbol}
-                </span>
-                {agent.currentDirection && (
-                  <span className={`direction-badge ${agent.currentDirection}`}>
-                    {agent.currentDirection.toUpperCase()}
-                  </span>
-                )}
-              </>
-            ) : (
-              <span style={{ color: 'var(--text-muted)' }}>SCANNING MARKETS...</span>
-            )}
+        {/* Mini vault */}
+        <div className="room-vault">
+          <div className="mini-vault-door">
+            <div className="mini-vault-dial" />
+            <div className="mini-vault-handle" />
           </div>
-          <span className="agent-platform-badge">
-            {agent.platform === 'ninjatrader' ? 'NT8' :
-             agent.platform === 'tradingview' ? 'TV' : 'SIM'}
-          </span>
         </div>
       </div>
 
       {/* Footer */}
-      <div className="agent-card-footer">
-        <div className="agent-balance">
-          <span className="agent-balance-label">VAULT BALANCE</span>
-          <span
-            className="agent-balance-value"
-            style={{
-              color: agent.agentColor,
-              textShadow: `0 0 6px ${agent.agentColor}60`
-            }}
-          >
-            ${fmt(agent.currentBalance)}
-          </span>
+      <div className="card-footer">
+        <div className="card-stats">
+          <div>
+            <div className="card-stat-label">MISSION P/L</div>
+            <div className={`card-stat-value ${pnlPos ? 'pos' : 'neg'}`}>{fmt(agent.dailyPnl)}</div>
+          </div>
+          <div>
+            <div className="card-stat-label">OPS TODAY</div>
+            <div className="card-stat-value teal">{agent.todayTrades}</div>
+          </div>
+          <div>
+            <div className="card-stat-label">WIN RATE</div>
+            <div className="card-stat-value gold">{(agent.winRate * 100).toFixed(1)}%</div>
+          </div>
+          <div>
+            <div className="card-stat-label">TOTAL P/L</div>
+            <div className={`card-stat-value ${totalPos ? 'pos' : 'neg'}`}>{fmt(agent.totalPnl)}</div>
+          </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-          <span style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: 1 }}>TOTAL P&L</span>
-          <span style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 12,
-            fontWeight: 700,
-            color: agent.totalPnl >= 0 ? 'var(--text-primary)' : 'var(--accent-red)'
-          }}>
-            {totalSign}${fmt(agent.totalPnl)}
-          </span>
-        </div>
-      </div>
 
-      {/* Settings button */}
-      <div style={{ padding: '6px 14px', borderTop: '1px solid var(--border-dim)' }}>
-        <button
-          className="btn-agent-settings"
-          onClick={() => onSettings(agent.id)}
-          style={{ width: '100%', justifyContent: 'center' }}
-        >
-          ⚙ CONFIGURE AGENT
-        </button>
+        <div className="card-strategy">
+          STRATEGY: {STRATEGIES[agent.preferredMarket] || 'Algorithmic'} &nbsp;·&nbsp;
+          {agent.currentSymbol ? agent.currentSymbol : 'SCANNING...'}
+        </div>
+
+        <div className="card-actions">
+          <span className="card-balance">{fmtBal(agent.currentBalance)}</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn-to-vault" onClick={() => onSettings(agent.id)}>
+              → TO VAULT
+            </button>
+            <button className="btn-cfg" onClick={() => onSettings(agent.id)}>
+              CFG
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

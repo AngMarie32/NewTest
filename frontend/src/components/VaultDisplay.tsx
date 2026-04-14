@@ -1,149 +1,152 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { VaultData } from '../types';
 
-interface VaultDisplayProps {
-  vault: VaultData | null;
-}
+interface Props { vault: VaultData | null; }
 
-function useCountUp(target: number, duration = 800) {
-  const [value, setValue] = useState(target);
-  const prevRef = useRef(target);
-  const rafRef = useRef<number>(0);
-
+function useCountUp(target: number, ms = 900) {
+  const [val, setVal] = useState(target);
+  const prev = useRef(target);
+  const raf  = useRef(0);
   useEffect(() => {
-    const start = prevRef.current;
-    const diff = target - start;
+    const from = prev.current;
+    const diff = target - from;
     if (Math.abs(diff) < 0.01) return;
-
-    const startTime = performance.now();
-    const animate = (now: number) => {
-      const elapsed = now - startTime;
-      const t = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - t, 3); // ease out cubic
-      setValue(start + diff * eased);
-      if (t < 1) rafRef.current = requestAnimationFrame(animate);
-      else prevRef.current = target;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min((now - t0) / ms, 1);
+      const e = 1 - Math.pow(1 - p, 3);
+      setVal(from + diff * e);
+      if (p < 1) raf.current = requestAnimationFrame(tick);
+      else prev.current = target;
     };
-
-    rafRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [target, duration]);
-
-  return value;
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [target, ms]);
+  return val;
 }
 
-function fmt(n: number) {
+const fmtShort = (n: number) => {
   if (n >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2) + 'M';
-  if (n >= 1_000) return '$' + (n / 1_000).toFixed(1) + 'K';
+  if (n >= 1_000)     return '$' + (n / 1_000).toFixed(1) + 'K';
   return '$' + n.toFixed(2);
-}
+};
+const fmtFull = (n: number) =>
+  (n >= 0 ? '+$' : '-$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
-function fmtFull(n: number) {
-  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
+const R = 58;
+const CIRC = 2 * Math.PI * R;
 
-const CIRCUMFERENCE = 2 * Math.PI * 52; // r=52
+// Decorative bolt positions around the vault ring
+const BOLTS = [0, 45, 90, 135, 180, 225, 270, 315].map(deg => {
+  const r = deg * Math.PI / 180;
+  return { x: 80 + 72 * Math.cos(r), y: 80 + 72 * Math.sin(r) };
+});
 
-const VaultDisplay: React.FC<VaultDisplayProps> = ({ vault }) => {
-  const animatedBalance = useCountUp(vault?.totalBalance ?? 0);
-  const animatedPnl = useCountUp(vault?.dailyPnl ?? 0);
+const VaultDisplay: React.FC<Props> = ({ vault }) => {
+  const animBal  = useCountUp(vault?.totalBalance ?? 0);
+  const animDaily = useCountUp(vault?.dailyPnl ?? 0);
 
-  if (!vault) {
-    return (
-      <div className="vault-panel">
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-          CONNECTING TO VAULT...
-        </div>
-      </div>
-    );
-  }
+  if (!vault) return (
+    <div className="vault-panel" style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)', fontSize: 10, letterSpacing: 3 }}>
+      CONNECTING TO VAULT...
+    </div>
+  );
 
-  // ROI as 0-100 pct for ring fill
-  const pct = Math.min(Math.max((vault.roi / 30) * 100, 0), 100); // 30% ROI = full ring
-  const dashOffset = CIRCUMFERENCE - (pct / 100) * CIRCUMFERENCE;
-  const isPositive = vault.totalPnl >= 0;
-  const isDailyPos = vault.dailyPnl >= 0;
+  const pct    = Math.min(Math.max((vault.roi / 25) * 100, 0), 100);
+  const offset = CIRC - (pct / 100) * CIRC;
+  const isPos  = vault.totalPnl >= 0;
+  const isDPos = vault.dailyPnl >= 0;
 
   return (
     <div className="vault-panel">
-      <div className="section-header" style={{ marginBottom: 8 }}>
-        <span className="section-title">THE VAULT</span>
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: 2 }}>
-          {vault.activeAgents}/{vault.totalAgents} ACTIVE
-        </span>
-      </div>
+      <div className="vault-title">THE VAULT</div>
 
-      {/* Ring gauge */}
-      <div className="vault-ring-container">
-        <svg className="vault-ring-svg" width={140} height={140} viewBox="0 0 120 120">
-          {/* Outer decorative ring */}
-          <circle cx="60" cy="60" r="56" fill="none" stroke="rgba(0,255,65,0.04)" strokeWidth="1" />
-          <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(0,255,65,0.04)" strokeWidth="1" />
+      {/* Vault door */}
+      <div className="vault-door-container">
+        <svg
+          className="vault-door-svg"
+          width={160} height={160}
+          viewBox="0 0 160 160"
+        >
+          {/* Outer decorative border */}
+          <rect x="4" y="4" width="152" height="152" rx="4"
+            fill="none" stroke="rgba(255,215,0,0.12)" strokeWidth="1" />
 
-          {/* Track */}
+          {/* Bolt holes */}
+          {BOLTS.map((b, i) => (
+            <circle key={i} cx={b.x} cy={b.y} r="3"
+              fill="none" stroke="rgba(255,215,0,0.3)" strokeWidth="1" />
+          ))}
+
+          {/* Ring track */}
+          <circle className="vault-door-track" cx="80" cy="80" r={R}
+            transform="rotate(-90 80 80)" />
+
+          {/* Ring fill */}
           <circle
-            className="vault-ring-track"
-            cx="60" cy="60" r="52"
+            className="vault-door-ring"
+            cx="80" cy="80" r={R}
+            strokeDasharray={CIRC}
+            strokeDashoffset={offset}
+            stroke={isPos ? 'var(--gold)' : 'var(--red)'}
+            transform="rotate(-90 80 80)"
           />
 
-          {/* Fill */}
-          <circle
-            className={`vault-ring-fill ${isPositive ? '' : 'red'}`}
-            cx="60" cy="60" r="52"
-            strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={dashOffset}
-            style={{ stroke: isPositive ? 'var(--text-primary)' : 'var(--accent-red)' }}
-          />
+          {/* Inner rings */}
+          <circle cx="80" cy="80" r="46" fill="none" stroke="rgba(255,215,0,0.08)" strokeWidth="1" />
+          <circle cx="80" cy="80" r="34" fill="#060c14" stroke="rgba(255,215,0,0.15)" strokeWidth="1" />
 
-          {/* Tick marks */}
-          {[0, 90, 180, 270].map(angle => {
-            const rad = (angle * Math.PI) / 180;
-            const x1 = 60 + 47 * Math.cos(rad);
-            const y1 = 60 + 47 * Math.sin(rad);
-            const x2 = 60 + 43 * Math.cos(rad);
-            const y2 = 60 + 43 * Math.sin(rad);
-            return (
-              <line key={angle} x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke="rgba(0,255,65,0.3)" strokeWidth="1.5" />
-            );
-          })}
+          {/* Spinning combination dial */}
+          <g style={{ transformOrigin: '80px 80px', animation: 'vault-spin 12s linear infinite' }}>
+            <circle cx="80" cy="80" r="22" fill="#0a1220" stroke="var(--gold-dim)" strokeWidth="1.5" />
+            {[0, 60, 120, 180, 240, 300].map((deg, i) => {
+              const r = deg * Math.PI / 180;
+              const x1 = 80 + 17 * Math.cos(r); const y1 = 80 + 17 * Math.sin(r);
+              const x2 = 80 + 21 * Math.cos(r); const y2 = 80 + 21 * Math.sin(r);
+              return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--gold)" strokeWidth="1" />;
+            })}
+            <line x1="80" y1="80" x2="80" y2="62" stroke="var(--gold)" strokeWidth="1.5" strokeLinecap="round" />
+          </g>
+
+          {/* Center pip */}
+          <circle cx="80" cy="80" r="5" fill="var(--gold)" opacity="0.5" />
         </svg>
 
-        <div className="vault-center">
-          <span className="vault-total-label">TOTAL ASSETS</span>
-          <span className={`vault-total-amount ${vault.totalBalance > vault.totalAllocated ? 'gold' : ''}`}>
-            {fmt(animatedBalance)}
-          </span>
-          <span className="vault-roi" style={{ color: isPositive ? 'var(--text-primary)' : 'var(--accent-red)' }}>
-            {isPositive ? '+' : ''}{vault.roi.toFixed(2)}% ROI
+        {/* Center text overlay */}
+        <div className="vault-center-content">
+          <span className="vault-label">ASSETS</span>
+          <span className="vault-amount">{fmtShort(animBal)}</span>
+          <span className="vault-roi" style={{ color: isPos ? 'var(--green)' : 'var(--red)' }}>
+            {isPos ? '+' : ''}{vault.roi.toFixed(2)}% ROI
           </span>
         </div>
       </div>
 
-      {/* Stats grid */}
-      <div className="vault-stats-grid">
+      <div className="vault-incoming">▼ PROFIT STREAMS INCOMING ▼</div>
+
+      <div className="vault-stats">
         <div className="vault-stat">
-          <div className="vault-stat-label">DAY P&L</div>
-          <div className="vault-stat-value" style={{ color: isDailyPos ? 'var(--text-primary)' : 'var(--accent-red)' }}>
-            {isDailyPos ? '+' : ''}${fmtFull(animatedPnl)}
+          <div className="vault-stat-label">TODAY</div>
+          <div className="vault-stat-value" style={{ color: isDPos ? 'var(--green)' : 'var(--red)' }}>
+            {fmtFull(animDaily)}
           </div>
         </div>
         <div className="vault-stat">
-          <div className="vault-stat-label">WEEKLY P&L</div>
-          <div className="vault-stat-value" style={{ color: vault.weeklyPnl >= 0 ? 'var(--text-primary)' : 'var(--accent-red)' }}>
-            {vault.weeklyPnl >= 0 ? '+' : ''}${fmtFull(vault.weeklyPnl)}
+          <div className="vault-stat-label">WEEKLY</div>
+          <div className="vault-stat-value" style={{ color: vault.weeklyPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+            {fmtFull(vault.weeklyPnl)}
           </div>
         </div>
         <div className="vault-stat">
           <div className="vault-stat-label">ALLOCATED</div>
-          <div className="vault-stat-value" style={{ color: 'var(--accent-gold)' }}>
-            ${fmtFull(vault.totalAllocated)}
+          <div className="vault-stat-value" style={{ color: 'var(--gold)' }}>
+            ${vault.totalAllocated.toLocaleString('en-US', { maximumFractionDigits: 0 })}
           </div>
         </div>
         <div className="vault-stat">
-          <div className="vault-stat-label">TOTAL P&L</div>
-          <div className="vault-stat-value" style={{ color: isPositive ? 'var(--text-primary)' : 'var(--accent-red)' }}>
-            {isPositive ? '+' : ''}${fmtFull(vault.totalPnl)}
+          <div className="vault-stat-label">AGENTS</div>
+          <div className="vault-stat-value" style={{ color: 'var(--teal)' }}>
+            {vault.activeAgents}/{vault.totalAgents}
           </div>
         </div>
       </div>

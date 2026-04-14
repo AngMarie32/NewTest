@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import type { Agent, Trade, VaultData, Connection, WSMessage } from '../types';
 import { useWebSocket } from '../hooks/useWebSocket';
 import Header from './Header';
@@ -8,41 +8,32 @@ import ProfitsPipeline from './ProfitsPipeline';
 import TradeActivity from './TradeActivity';
 import SettingsModal from './SettingsModal';
 
+const fmt2 = (n: number) =>
+  (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
+
 const Dashboard: React.FC = () => {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [vault, setVault] = useState<VaultData | null>(null);
+  const [agents,      setAgents]      = useState<Agent[]>([]);
+  const [trades,      setTrades]      = useState<Trade[]>([]);
+  const [vault,       setVault]       = useState<VaultData | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [flashingAgents, setFlashingAgents] = useState<Set<number>>(new Set());
-
+  const [flashing,    setFlashing]    = useState<Set<number>>(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsAgentId, setSettingsAgentId] = useState<number | null>(null);
-
-  // Ticker clock for header
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const interval = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
+  const [settingsAgent, setSettingsAgent] = useState<number | null>(null);
 
   const handleMessage = useCallback((msg: WSMessage) => {
     switch (msg.type) {
       case 'INIT':
-        if (msg.data.agents) setAgents(msg.data.agents);
-        if (msg.data.vault) setVault(msg.data.vault);
-        if (msg.data.trades) setTrades(msg.data.trades);
+        if (msg.data.agents)      setAgents(msg.data.agents);
+        if (msg.data.vault)       setVault(msg.data.vault);
+        if (msg.data.trades)      setTrades(msg.data.trades);
         if (msg.data.connections) setConnections(msg.data.connections);
         break;
 
       case 'AGENT_UPDATE':
         if (msg.data.agent) {
           setAgents(prev => {
-            const idx = prev.findIndex(a => a.id === msg.data.agent!.id);
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = msg.data.agent!;
-              return next;
-            }
+            const i = prev.findIndex(a => a.id === msg.data.agent!.id);
+            if (i >= 0) { const n = [...prev]; n[i] = msg.data.agent!; return n; }
             return [...prev, msg.data.agent!];
           });
         }
@@ -50,22 +41,10 @@ const Dashboard: React.FC = () => {
 
       case 'TRADE_EXECUTED':
         if (msg.data.trade) {
-          const trade = msg.data.trade;
-          setTrades(prev => [trade, ...prev].slice(0, 100));
-
-          // Flash the agent card
-          setFlashingAgents(prev => {
-            const next = new Set(prev);
-            next.add(trade.agentId);
-            return next;
-          });
-          setTimeout(() => {
-            setFlashingAgents(prev => {
-              const next = new Set(prev);
-              next.delete(trade.agentId);
-              return next;
-            });
-          }, 800);
+          const t = msg.data.trade;
+          setTrades(prev => [t, ...prev].slice(0, 100));
+          setFlashing(prev => { const n = new Set(prev); n.add(t.agentId); return n; });
+          setTimeout(() => setFlashing(prev => { const n = new Set(prev); n.delete(t.agentId); return n; }), 800);
         }
         break;
 
@@ -76,9 +55,7 @@ const Dashboard: React.FC = () => {
       case 'CONNECTION_STATUS':
         if (msg.data.platform && msg.data.status) {
           setConnections(prev => prev.map(c =>
-            c.platform === msg.data.platform
-              ? { ...c, status: msg.data.status as Connection['status'] }
-              : c
+            c.platform === msg.data.platform ? { ...c, status: msg.data.status as Connection['status'] } : c
           ));
         }
         break;
@@ -87,103 +64,68 @@ const Dashboard: React.FC = () => {
 
   const { connected } = useWebSocket(handleMessage);
 
-  const openAgentSettings = (agentId: number) => {
-    setSettingsAgentId(agentId);
-    setSettingsOpen(true);
-  };
-
-  const openGlobalSettings = () => {
-    setSettingsAgentId(null);
-    setSettingsOpen(true);
-  };
+  const activeAgents = agents.filter(a => a.status === 'active' || a.status === 'executing');
+  const totalTrades  = agents.reduce((s, a) => s + a.totalTrades, 0);
+  const avgWin       = agents.length > 0
+    ? (agents.reduce((s, a) => s + a.winRate, 0) / agents.length * 100).toFixed(1) + '%'
+    : '—';
 
   const handleAgentUpdated = (updated: Agent) => {
     setAgents(prev => {
-      const idx = prev.findIndex(a => a.id === updated.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = updated;
-        return next;
-      }
+      const i = prev.findIndex(a => a.id === updated.id);
+      if (i >= 0) { const n = [...prev]; n[i] = updated; return n; }
       return prev;
     });
   };
 
-  const handleConnectionUpdate = (platform: string, status: string) => {
+  const handleConnUpdate = (platform: string, status: string) => {
     setConnections(prev => prev.map(c =>
       c.platform === platform ? { ...c, status: status as Connection['status'] } : c
     ));
   };
 
-  const activeCount = agents.filter(a => a.status === 'active' || a.status === 'executing').length;
-
   return (
-    <div className="app-container">
-      <Header
-        vault={vault}
-        connected={connected}
-        onOpenSettings={openGlobalSettings}
-      />
+    <div className="app">
+      <Header vault={vault} connected={connected} onOpenSettings={() => { setSettingsAgent(null); setSettingsOpen(true); }} />
 
       {/* Stats bar */}
       <div className="stats-bar">
-        <div className="stat-pill">
-          <span className="stat-pill-label">FIELD AGENTS</span>
-          <span className="stat-pill-value" style={{ color: 'var(--text-primary)' }}>
-            {activeCount} <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>/ {agents.length}</span>
-          </span>
+        <div className="stat-box">
+          <div className="stat-label">ACTIVE AGENTS</div>
+          <div className="stat-value">
+            <span style={{ color: 'var(--green)' }}>{activeAgents.length}</span>
+            <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>/{agents.length}</span>
+          </div>
         </div>
-        <div className="stat-pill">
-          <span className="stat-pill-label">TODAY TRADES</span>
-          <span className="stat-pill-value" style={{ color: 'var(--accent-gold)' }}>
-            {agents.reduce((s, a) => s + a.todayTrades, 0)}
-          </span>
+        <div className="stat-box">
+          <div className="stat-label">TOTAL TRADES</div>
+          <div className="stat-value gold">{totalTrades.toLocaleString()}</div>
         </div>
-        <div className="stat-pill">
-          <span className="stat-pill-label">AVG WIN RATE</span>
-          <span className="stat-pill-value" style={{ color: 'var(--text-primary)' }}>
-            {agents.length > 0
-              ? ((agents.reduce((s, a) => s + a.winRate, 0) / agents.length) * 100).toFixed(1) + '%'
-              : '—'}
-          </span>
+        <div className="stat-box">
+          <div className="stat-label">WIN RATE</div>
+          <div className="stat-value green">{avgWin}</div>
         </div>
-        <div className="stat-pill">
-          <span className="stat-pill-label">DAY P&L</span>
-          <span className="stat-pill-value" style={{
-            color: (vault?.dailyPnl ?? 0) >= 0 ? 'var(--text-primary)' : 'var(--accent-red)'
-          }}>
-            {(vault?.dailyPnl ?? 0) >= 0 ? '+' : ''}${(vault?.dailyPnl ?? 0).toFixed(2)}
-          </span>
-        </div>
-        <div className="stat-pill">
-          <span className="stat-pill-label">TOTAL ROI</span>
-          <span className="stat-pill-value" style={{
-            color: (vault?.roi ?? 0) >= 0 ? 'var(--accent-gold)' : 'var(--accent-red)'
-          }}>
-            {(vault?.roi ?? 0) >= 0 ? '+' : ''}{(vault?.roi ?? 0).toFixed(2)}%
-          </span>
+        <div className="stat-box">
+          <div className="stat-label">DAY P/L</div>
+          <div className="stat-value" style={{ color: (vault?.dailyPnl ?? 0) >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 18 }}>
+            {fmt2(vault?.dailyPnl ?? 0)}
+          </div>
         </div>
       </div>
 
-      {/* Main layout */}
-      <div className="main-layout">
-        {/* LEFT: Field Agents */}
+      {/* Main */}
+      <div className="main">
+        {/* Field Agents */}
         <div>
-          <div className="section-header">
+          <div className="section-hdr">
             <span className="section-title">FIELD AGENTS</span>
-            <span className="section-badge">
-              {activeCount} ON MISSION
-            </span>
+            <button className="btn-deploy" onClick={() => { setSettingsAgent(null); setSettingsOpen(true); }}>
+              + DEPLOY AGENT
+            </button>
           </div>
 
           {agents.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              padding: '60px 20px',
-              color: 'var(--text-muted)',
-              fontSize: 12,
-              letterSpacing: 3
-            }}>
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-dim)', fontSize: 11, letterSpacing: 3 }}>
               CONNECTING TO FIELD AGENTS...
             </div>
           ) : (
@@ -192,15 +134,15 @@ const Dashboard: React.FC = () => {
                 <AgentCard
                   key={agent.id}
                   agent={agent}
-                  onSettings={openAgentSettings}
-                  isFlashing={flashingAgents.has(agent.id)}
+                  onSettings={id => { setSettingsAgent(id); setSettingsOpen(true); }}
+                  isFlashing={flashing.has(agent.id)}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {/* RIGHT: Vault + Pipeline + Activity */}
+        {/* Right panel */}
         <div>
           <VaultDisplay vault={vault} />
           <ProfitsPipeline agents={agents} />
@@ -208,15 +150,14 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsOpen}
-        agentId={settingsAgentId}
+        agentId={settingsAgent}
         agents={agents}
         connections={connections}
         onClose={() => setSettingsOpen(false)}
         onAgentUpdated={handleAgentUpdated}
-        onConnectionUpdate={handleConnectionUpdate}
+        onConnectionUpdate={handleConnUpdate}
       />
     </div>
   );
