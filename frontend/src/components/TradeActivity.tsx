@@ -1,9 +1,7 @@
 import React from 'react';
 import type { Trade } from '../types';
 
-interface TradeActivityProps {
-  trades: Trade[];
-}
+interface Props { trades: Trade[]; }
 
 function fmtTime(ts: string) {
   const d = new Date(ts);
@@ -11,16 +9,15 @@ function fmtTime(ts: string) {
 }
 
 function fmtPnl(n: number) {
-  const sign = n >= 0 ? '+' : '';
-  return `${sign}$${Math.abs(n).toFixed(2)}`;
+  return (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
 }
 
-const TradeActivity: React.FC<TradeActivityProps> = ({ trades }) => {
+const TradeActivity: React.FC<Props> = ({ trades }) => {
   const recent = trades.slice(0, 12);
 
   return (
-    <div className="activity-feed">
-      <div className="section-header" style={{ marginBottom: 8 }}>
+    <div className="feed-panel">
+      <div className="section-hdr" style={{ marginBottom: 8 }}>
         <span className="section-title">RECENT INTEL</span>
         <span style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: 1 }}>
           {trades.length} OPS
@@ -33,29 +30,22 @@ const TradeActivity: React.FC<TradeActivityProps> = ({ trades }) => {
         </div>
       ) : (
         recent.map(trade => (
-          <div key={trade.id} className="activity-item">
-            <span
-              className="activity-dot"
+          <div key={trade.id} className="feed-row">
+            <span className="fd"
               style={{
-                background: trade.agentColor || 'var(--text-secondary)',
-                boxShadow: `0 0 4px ${trade.agentColor || 'var(--text-secondary)'}`
+                background: trade.agentColor || 'var(--text-dim)',
+                boxShadow: `0 0 4px ${trade.agentColor || 'var(--text-dim)'}`,
               }}
             />
-            <span className="activity-time">{fmtTime(trade.closedAt || trade.openedAt)}</span>
-            <span
-              className="activity-codename"
-              style={{ color: trade.agentColor || 'var(--text-secondary)' }}
-            >
+            <span className="ft">{fmtTime(trade.closedAt || trade.openedAt)}</span>
+            <span className="fn" style={{ color: trade.agentColor || 'var(--text)' }}>
               {trade.agentCodename}
             </span>
-            <span className="activity-symbol">{trade.symbol}</span>
-            <span className={`activity-dir ${trade.direction}`}>
+            <span className="fs">{trade.symbol}</span>
+            <span className={`fdir ${trade.direction}`}>
               {trade.direction === 'long' ? 'LONG' : 'SHRT'}
             </span>
-            <span
-              className="activity-pnl"
-              style={{ color: trade.pnl >= 0 ? 'var(--text-primary)' : 'var(--accent-red)' }}
-            >
+            <span className="fpnl" style={{ color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
               {fmtPnl(trade.pnl)}
             </span>
           </div>

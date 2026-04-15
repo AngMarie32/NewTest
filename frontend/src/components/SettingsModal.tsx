@@ -20,7 +20,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   connections,
   onClose,
   onAgentUpdated,
-  onConnectionUpdate
+  onConnectionUpdate,
 }) => {
   const [tab, setTab] = useState<'funds' | 'agent' | 'connections'>('funds');
   const [selectedAgentId, setSelectedAgentId] = useState<number>(agentId || (agents[0]?.id ?? 0));
@@ -29,16 +29,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // NT8 connection form
   const [ntHost, setNtHost] = useState('localhost');
   const [ntPort, setNtPort] = useState('8080');
   const [ntUser, setNtUser] = useState('');
   const [ntPass, setNtPass] = useState('');
 
-  // TradingView form
   const [tvSecret, setTvSecret] = useState('');
 
-  // Agent edit form
   const [agentName, setAgentName] = useState('');
   const [agentCodename, setAgentCodename] = useState('');
   const [agentPlatform, setAgentPlatform] = useState('simulator');
@@ -86,16 +83,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleAddFunds = async () => {
     const amount = parseFloat(fundAmount);
-    if (isNaN(amount) || amount <= 0) {
-      showMessage('ERROR: Invalid amount');
-      return;
-    }
+    if (isNaN(amount) || amount <= 0) { showMessage('ERROR: Invalid amount'); return; }
     setLoading(true);
     try {
       const res = await fetch(`/api/agents/${selectedAgentId}/funds`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, action: fundAction })
+        body: JSON.stringify({ amount, action: fundAction }),
       });
       const updated = await res.json();
       onAgentUpdated(updated);
@@ -113,14 +107,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       const res = await fetch(`/api/agents/${selectedAgentId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: agentName,
-          codename: agentCodename,
-          platform: agentPlatform,
-          preferredMarket: agentMarket,
-          agentColor,
-          status: agentStatus
-        })
+        body: JSON.stringify({ name: agentName, codename: agentCodename, platform: agentPlatform, preferredMarket: agentMarket, agentColor, status: agentStatus }),
       });
       const updated = await res.json();
       onAgentUpdated(updated);
@@ -137,11 +124,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       const res = await fetch('/api/connections/ninjatrader', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: ntHost, port: parseInt(ntPort), username: ntUser, password: ntPass })
+        body: JSON.stringify({ host: ntHost, port: parseInt(ntPort), username: ntUser, password: ntPass }),
       });
       const data = await res.json();
       onConnectionUpdate('ninjatrader', data.success ? 'connected' : 'disconnected');
-      showMessage(data.success ? 'SUCCESS: NinjaTrader connected' : 'ERROR: Cannot reach NinjaTrader. Ensure NT8 HTTP server is enabled.');
+      showMessage(data.success
+        ? 'SUCCESS: NinjaTrader connected'
+        : 'ERROR: Cannot reach NinjaTrader. Ensure NT8 HTTP server is enabled.');
     } catch {
       showMessage('ERROR: Connection failed');
     }
@@ -151,15 +140,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleSaveTV = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/connections/tradingview', {
+      await fetch('/api/connections/tradingview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhookSecret: tvSecret })
+        body: JSON.stringify({ webhookSecret: tvSecret }),
       });
-      const data = await res.json();
       showMessage('SUCCESS: TradingView webhook configured');
       onConnectionUpdate('tradingview', 'disconnected');
-      console.log('TV webhook URL:', data.webhookUrl);
     } catch {
       showMessage('ERROR: Failed to configure');
     }
@@ -169,36 +156,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <div className="modal-header">
-          <span className="modal-title">OPERATIONS CONTROL</span>
-          <button className="modal-close" onClick={onClose}>✕</button>
+        <div className="modal-hdr">
+          <span className="modal-hdr-title">OPERATIONS CONTROL</span>
+          <button className="modal-x" onClick={onClose}>✕</button>
         </div>
 
         <div className="modal-tabs">
-          <button className={`modal-tab ${tab === 'funds' ? 'active' : ''}`} onClick={() => setTab('funds')}>
+          <button className={`modal-tab${tab === 'funds' ? ' active' : ''}`} onClick={() => setTab('funds')}>
             FUND OPS
           </button>
-          <button className={`modal-tab ${tab === 'agent' ? 'active' : ''}`} onClick={() => setTab('agent')}>
+          <button className={`modal-tab${tab === 'agent' ? ' active' : ''}`} onClick={() => setTab('agent')}>
             AGENT CFG
           </button>
-          <button className={`modal-tab ${tab === 'connections' ? 'active' : ''}`} onClick={() => setTab('connections')}>
+          <button className={`modal-tab${tab === 'connections' ? ' active' : ''}`} onClick={() => setTab('connections')}>
             CONNECTIONS
           </button>
         </div>
 
         <div className="modal-body">
           {message && (
-            <div style={{
-              padding: '8px 12px',
-              marginBottom: 12,
-              border: `1px solid ${message.startsWith('ERROR') ? 'var(--accent-red)' : 'var(--border-active)'}`,
-              color: message.startsWith('ERROR') ? 'var(--accent-red)' : 'var(--text-primary)',
-              fontSize: 10,
-              letterSpacing: 2,
-              background: message.startsWith('ERROR') ? 'rgba(255,68,68,0.05)' : 'rgba(0,255,65,0.05)'
-            }}>
+            <div className={`msg-box ${message.startsWith('ERROR') ? 'err' : 'ok'}`}>
               {message}
             </div>
           )}
@@ -206,100 +185,75 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* FUNDS TAB */}
           {tab === 'funds' && (
             <div>
-              <div className="form-group">
-                <label className="form-label">SELECT AGENT</label>
-                <select
-                  className="form-select"
-                  value={selectedAgentId}
-                  onChange={e => setSelectedAgentId(Number(e.target.value))}
-                >
-                  {agents.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.codename} — ${a.currentBalance.toFixed(2)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <label className="form-label">SELECT AGENT</label>
+              <select className="form-select" value={selectedAgentId}
+                onChange={e => setSelectedAgentId(Number(e.target.value))}>
+                {agents.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.codename} — ${a.currentBalance.toFixed(2)}
+                  </option>
+                ))}
+              </select>
 
               {selectedAgent && (
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: 8,
-                  padding: '10px 12px',
-                  background: 'rgba(0,0,0,0.3)',
-                  border: '1px solid var(--border-dim)',
-                  marginBottom: 16
+                  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+                  padding: '10px 12px', background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid var(--border)', marginBottom: 16,
                 }}>
                   <div>
-                    <div style={{ fontSize: 8, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 2 }}>CURRENT BALANCE</div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: selectedAgent.agentColor }}>
+                    <div style={{ fontSize: 8, color: 'var(--text-dim)', letterSpacing: 1, marginBottom: 2 }}>CURRENT BALANCE</div>
+                    <div style={{ fontFamily: 'var(--font-hud)', fontSize: 16, color: selectedAgent.agentColor }}>
                       ${selectedAgent.currentBalance.toFixed(2)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 8, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 2 }}>ALLOCATED FUNDS</div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: 'var(--accent-gold)' }}>
+                    <div style={{ fontSize: 8, color: 'var(--text-dim)', letterSpacing: 1, marginBottom: 2 }}>ALLOCATED FUNDS</div>
+                    <div style={{ fontFamily: 'var(--font-hud)', fontSize: 16, color: 'var(--gold)' }}>
                       ${selectedAgent.allocatedFunds.toFixed(2)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 8, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 2 }}>TOTAL P&L</div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, color: selectedAgent.totalPnl >= 0 ? 'var(--text-primary)' : 'var(--accent-red)' }}>
+                    <div style={{ fontSize: 8, color: 'var(--text-dim)', letterSpacing: 1, marginBottom: 2 }}>TOTAL P&L</div>
+                    <div style={{ fontFamily: 'var(--font-hud)', fontSize: 14, color: selectedAgent.totalPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
                       {selectedAgent.totalPnl >= 0 ? '+' : ''}${selectedAgent.totalPnl.toFixed(2)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 8, color: 'var(--text-muted)', letterSpacing: 1, marginBottom: 2 }}>WIN RATE</div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, color: 'var(--accent-gold)' }}>
+                    <div style={{ fontSize: 8, color: 'var(--text-dim)', letterSpacing: 1, marginBottom: 2 }}>WIN RATE</div>
+                    <div style={{ fontFamily: 'var(--font-hud)', fontSize: 14, color: 'var(--gold)' }}>
                       {(selectedAgent.winRate * 100).toFixed(1)}%
                     </div>
                   </div>
                 </div>
               )}
 
-              <div className="form-group">
-                <label className="form-label">OPERATION TYPE</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                  {(['add', 'remove', 'set'] as const).map(action => (
-                    <button
-                      key={action}
-                      className="fund-btn"
-                      onClick={() => setFundAction(action)}
-                      style={{
-                        borderColor: fundAction === action ? 'var(--border-active)' : 'var(--border-dim)',
-                        color: fundAction === action ? 'var(--text-primary)' : 'var(--text-muted)',
-                        background: fundAction === action ? 'rgba(0,255,65,0.08)' : 'transparent'
-                      }}
-                    >
-                      {action === 'add' ? '+ ADD' : action === 'remove' ? '- REMOVE' : '= SET'}
-                    </button>
-                  ))}
-                </div>
+              <label className="form-label">OPERATION TYPE</label>
+              <div className="preset-btns" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 12 }}>
+                {(['add', 'remove', 'set'] as const).map(action => (
+                  <button key={action} className="preset-btn"
+                    onClick={() => setFundAction(action)}
+                    style={{
+                      borderColor: fundAction === action ? 'var(--teal)' : 'var(--border)',
+                      color: fundAction === action ? 'var(--teal)' : 'var(--text-dim)',
+                      background: fundAction === action ? 'rgba(0,201,228,0.08)' : 'transparent',
+                    }}>
+                    {action === 'add' ? '+ ADD' : action === 'remove' ? '– REMOVE' : '= SET'}
+                  </button>
+                ))}
               </div>
 
-              <div className="form-group">
-                <label className="form-label">AMOUNT ($)</label>
-                <div className="fund-buttons">
-                  {PRESET_AMOUNTS.map(amt => (
-                    <button
-                      key={amt}
-                      className="fund-btn"
-                      onClick={() => setFundAmount(String(amt))}
-                    >
-                      ${amt >= 1000 ? amt / 1000 + 'K' : amt}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  className="form-input"
-                  type="number"
-                  placeholder="ENTER CUSTOM AMOUNT"
-                  value={fundAmount}
-                  onChange={e => setFundAmount(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddFunds()}
-                />
+              <label className="form-label">AMOUNT ($)</label>
+              <div className="preset-btns">
+                {PRESET_AMOUNTS.map(amt => (
+                  <button key={amt} className="preset-btn" onClick={() => setFundAmount(String(amt))}>
+                    ${amt >= 1000 ? amt / 1000 + 'K' : amt}
+                  </button>
+                ))}
               </div>
+              <input className="form-input" type="number" placeholder="ENTER CUSTOM AMOUNT"
+                value={fundAmount} onChange={e => setFundAmount(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddFunds()} />
 
               <button className="btn-primary" onClick={handleAddFunds} disabled={loading}>
                 {loading ? 'PROCESSING...' : `EXECUTE ${fundAction.toUpperCase()} FUNDS`}
@@ -310,31 +264,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* AGENT TAB */}
           {tab === 'agent' && (
             <div>
-              <div className="form-group">
-                <label className="form-label">SELECT AGENT</label>
-                <select
-                  className="form-select"
-                  value={selectedAgentId}
-                  onChange={e => setSelectedAgentId(Number(e.target.value))}
-                >
-                  {agents.map(a => (
-                    <option key={a.id} value={a.id}>{a.codename}</option>
-                  ))}
-                </select>
-              </div>
+              <label className="form-label">SELECT AGENT</label>
+              <select className="form-select" value={selectedAgentId}
+                onChange={e => setSelectedAgentId(Number(e.target.value))}>
+                {agents.map(a => (
+                  <option key={a.id} value={a.id}>{a.codename}</option>
+                ))}
+              </select>
 
-              <div className="form-group">
-                <label className="form-label">AGENT NAME</label>
-                <input className="form-input" value={agentName} onChange={e => setAgentName(e.target.value)} />
-              </div>
+              <label className="form-label">AGENT NAME</label>
+              <input className="form-input" value={agentName} onChange={e => setAgentName(e.target.value)} />
 
-              <div className="form-group">
-                <label className="form-label">CODENAME</label>
-                <input className="form-input" value={agentCodename} onChange={e => setAgentCodename(e.target.value.toUpperCase())} />
-              </div>
+              <label className="form-label">CODENAME</label>
+              <input className="form-input" value={agentCodename}
+                onChange={e => setAgentCodename(e.target.value.toUpperCase())} />
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="form-group">
+                <div>
                   <label className="form-label">STATUS</label>
                   <select className="form-select" value={agentStatus} onChange={e => setAgentStatus(e.target.value)}>
                     <option value="active">ACTIVE</option>
@@ -342,8 +288,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <option value="offline">OFFLINE</option>
                   </select>
                 </div>
-
-                <div className="form-group">
+                <div>
                   <label className="form-label">MARKET</label>
                   <select className="form-select" value={agentMarket} onChange={e => setAgentMarket(e.target.value)}>
                     <option value="forex">FOREX</option>
@@ -355,7 +300,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="form-group">
+                <div>
                   <label className="form-label">PLATFORM</label>
                   <select className="form-select" value={agentPlatform} onChange={e => setAgentPlatform(e.target.value)}>
                     <option value="simulator">SIMULATOR</option>
@@ -363,16 +308,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <option value="tradingview">TRADING VIEW</option>
                   </select>
                 </div>
-
-                <div className="form-group">
+                <div>
                   <label className="form-label">AGENT COLOR</label>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <input
-                      type="color"
-                      value={agentColor}
-                      onChange={e => setAgentColor(e.target.value)}
-                      style={{ width: 40, height: 38, background: 'none', border: '1px solid var(--border-dim)', cursor: 'pointer', padding: 2 }}
-                    />
+                    <input type="color" value={agentColor} onChange={e => setAgentColor(e.target.value)}
+                      style={{ width: 40, height: 38, background: 'none', border: '1px solid var(--border)', cursor: 'pointer', padding: 2 }} />
                     <input className="form-input" value={agentColor} onChange={e => setAgentColor(e.target.value)} style={{ flex: 1 }} />
                   </div>
                 </div>
@@ -387,14 +327,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* CONNECTIONS TAB */}
           {tab === 'connections' && (
             <div>
-              {/* Connection Status Overview */}
               <div style={{ marginBottom: 16 }}>
                 {[ntConn, tvConn].filter(Boolean).map(conn => conn && (
-                  <div key={conn.platform} className="connection-status-row">
-                    <span className="connection-platform">
+                  <div key={conn.platform} className="conn-row">
+                    <span className="conn-platform">
                       {conn.platform === 'ninjatrader' ? 'NINJA TRADER 8' : 'TRADING VIEW'}
                     </span>
-                    <span className={`connection-badge ${conn.status}`}>
+                    <span className={`conn-badge ${conn.status}`}>
                       {conn.status.toUpperCase()}
                     </span>
                   </div>
@@ -403,12 +342,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <div className="divider" />
 
-              {/* NinjaTrader Section */}
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: 3, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                <div style={{ fontFamily: 'var(--font-hud)', fontSize: 11, letterSpacing: 3, color: 'var(--text-dim)', marginBottom: 10 }}>
                   NINJA TRADER 8
                 </div>
-
                 <div className="info-box">
                   To enable NT8 connection:<br />
                   1. Open NinjaTrader 8<br />
@@ -416,29 +353,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   3. Enable "HTTP Server" (port 8080)<br />
                   4. Enter credentials below and connect
                 </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 8 }}>
-                  <div className="form-group">
+                  <div>
                     <label className="form-label">HOST</label>
                     <input className="form-input" value={ntHost} onChange={e => setNtHost(e.target.value)} placeholder="localhost" />
                   </div>
-                  <div className="form-group">
+                  <div>
                     <label className="form-label">PORT</label>
                     <input className="form-input" value={ntPort} onChange={e => setNtPort(e.target.value)} placeholder="8080" />
                   </div>
                 </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div className="form-group">
+                  <div>
                     <label className="form-label">USERNAME (optional)</label>
                     <input className="form-input" value={ntUser} onChange={e => setNtUser(e.target.value)} placeholder="optional" />
                   </div>
-                  <div className="form-group">
+                  <div>
                     <label className="form-label">PASSWORD (optional)</label>
                     <input className="form-input" type="password" value={ntPass} onChange={e => setNtPass(e.target.value)} placeholder="optional" />
                   </div>
                 </div>
-
                 <button className="btn-primary" onClick={handleConnectNT} disabled={loading}>
                   {loading ? 'CONNECTING...' : 'CONNECT NINJA TRADER'}
                 </button>
@@ -446,32 +380,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <div className="divider" />
 
-              {/* TradingView Section */}
               <div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: 11, letterSpacing: 3, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                <div style={{ fontFamily: 'var(--font-hud)', fontSize: 11, letterSpacing: 3, color: 'var(--text-dim)', marginBottom: 10 }}>
                   TRADING VIEW
                 </div>
-
                 <div className="info-box">
                   TradingView integration uses webhooks (Pro+ required):<br />
                   1. Set webhook URL in your TV alert<br />
-                  2. Webhook endpoint: <strong>http://YOUR-IP:3001/api/webhooks/tradingview</strong><br />
+                  2. Endpoint: <strong>http://YOUR-IP:3001/api/webhooks/tradingview</strong><br />
                   3. For external access, use ngrok or deploy to a server
                 </div>
+                <label className="form-label">WEBHOOK SECRET (optional)</label>
+                <input className="form-input" value={tvSecret} onChange={e => setTvSecret(e.target.value)}
+                  placeholder="SECURE_SECRET_KEY" />
 
-                <div className="form-group">
-                  <label className="form-label">WEBHOOK SECRET (optional)</label>
-                  <input
-                    className="form-input"
-                    value={tvSecret}
-                    onChange={e => setTvSecret(e.target.value)}
-                    placeholder="SECURE_SECRET_KEY"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">PINE SCRIPT ALERT MESSAGE FORMAT</label>
-                  <div className="code-block">{`{
+                <label className="form-label">PINE SCRIPT ALERT MESSAGE FORMAT</label>
+                <div className="code-box">{`{
   "agentId": 1,
   "secret": "${tvSecret || 'your-secret'}",
   "symbol": "{{ticker}}",
@@ -480,7 +404,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   "pnl": {{strategy.netprofit}},
   "action": "trade"
 }`}</div>
-                </div>
 
                 <button className="btn-primary" onClick={handleSaveTV} disabled={loading}>
                   {loading ? 'SAVING...' : 'SAVE TRADINGVIEW CONFIG'}
